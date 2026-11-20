@@ -1,0 +1,68 @@
+{
+  "sha256": "ac69aff715a31f3f35439247b02d9e7bf95e409652bf88e5f15329c6effb9dba",
+  "sklearn": "1.9.1",
+  "pandas": "3.1.1",
+  "numpy": "2.5.4",
+  "python": "3.13.5",
+  "targets": {
+    "TDS": {
+      "raw_rows": 505730,
+      "rejected_rows": 0,
+      "valid_rows": 505730,
+      "minutes": 48081,
+      "start": "2023-01-26 10:38:00",
+      "end": "2023-03-22 17:53:00",
+      "max_gap_minutes": 2645.0,
+      "pairs": 42872,
+      "train_n": 36411,
+      "test_n": 6431,
+      "fold_boundaries": [
+        "2023-02-20 22:48:00",
+        "2023-03-02 01:02:00",
+        "2023-03-08 10:13:00"
+      ],
+      "test_end": "2023-03-22 09:13:00"
+    },
+    "water_temp": {
+      "raw_rows": 505730,
+      "rejected_rows": 219,
+      "valid_rows": 505511,
+      "minutes": 48065,
+      "start": "2023-01-26 10:38:00",
+      "end": "2023-03-22 17:53:00",
+      "max_gap_minutes": 2645.0,
+      "pairs": 42859,
+      "train_n": 36400,
+      "test_n": 6429,
+      "fold_boundaries": [
+        "2023-02-20 22:40:00",
+        "2023-03-02 00:53:00",
+        "2023-03-08 10:02:00"
+      ],
+      "test_end": "2023-03-22 09:13:00"
+    },
+    "water_pH": {
+      "raw_rows": 505730,
+      "rejected_rows": 219,
+      "valid_rows": 505511,
+      "minutes": 48065,
+      "start": "2023-01-26 10:38:00",
+      "end": "2023-03-22 17:53:00",
+      "max_gap_minutes": 2645.0,
+      "pairs": 42859,
+      "train_n": 36400,
+      "test_n": 6429,
+      "fold_boundaries": [
+        "2023-02-20 22:40:00",
+        "2023-03-02 00:53:00",
+        "2023-03-08 10:02:00"
+      ],
+      "test_end": "2023-03-22 09:13:00"
+    }
+  },
+  "selected": {
+    "TDS": "mean15",
+    "water_temp": "rf_residual",
+    "water_pH": "mean15"
+  }
+}
