@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="vi">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Giám sát nước ao nuôi cá rô phi đỏ</title>
+<style>
+body{font:17px system-ui;max-width:880px;margin:24px auto;padding:16px;color:#18333d;background:#f2f6f7}
+button,input{font:inherit;padding:7px;margin:4px}article,pre{background:white;padding:14px}
+article{border-left:5px solid #357e8c;margin:12px 0}.warn{border-color:#bd4828}pre{white-space:pre-wrap;overflow-wrap:anywhere}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px;border-bottom:1px solid #dde5e7}
+</style>
+<h1>Giám sát nước ao nuôi cá rô phi đỏ</h1>
+<label>API key <input id="key" type="password"></label><button id="connect">Kết nối</button>
+<label><input id="sound" type="checkbox">Âm thanh cảnh báo</label>
+<p id="status">Chưa kết nối</p><div id="cards"></div><p id="evaluation"></p>
+<button id="csv">Tải số đo CSV</button><button id="forecasts">Tải dự báo CSV</button>
+<details><summary>Số đo mới nhất</summary><pre id="data"></pre></details>
+<details><summary>Nhật ký trạng thái</summary><pre id="events"></pre></details>
+<script>
+const el = id => document.getElementById(id);
+const specs = [
+  ['ph','pH','current_ph','',2],
+  ['temperature_c','Nhiệt độ','current_temperature_c',' °C',2],
+  ['tds_ppm','TDS','tds_ppm',' ppm',1]
+];
+const states = {ready:'Đã có dự báo', history:'Đang tích lũy dữ liệu', sensor:'Thiếu số đo hợp lệ',
+  inputs:'Thiếu đầu vào mô hình', model:'Kiểm tra mô hình và phiên bản thư viện', warming_up:'Đang chờ dữ liệu',
+  calibration:'Đang hiệu chuẩn', stale:'Mất dữ liệu mới', clock_error:'Kiểm tra đồng hồ máy tính', ph_quality:'Kiểm tra số đo pH'};
+const names = {current_outside:'pH hiện tại ngoài khoảng thích hợp',forecast_outside:'pH sau 30 phút ngoài khoảng thích hợp',
+  temp_current_outside:'Nhiệt độ hiện tại ngoài khoảng thích hợp',temp_forecast_outside:'Nhiệt độ sau 30 phút ngoài khoảng thích hợp',
+  tds_current_above:'TDS hiện tại vượt mốc tham khảo',tds_forecast_above:'TDS dự báo sau 30 phút vượt mốc tham khảo'};
+let key='', timer, audio, lastSignature='', generation=0;
+async function get(path){
+  const r=await fetch(path,{headers:{'X-API-Key':key}});
+  if(!r.ok) throw Error('HTTP '+r.status);
+  return r;
+}
+function add(parent,tag,text){
+  const node=document.createElement(tag);node.textContent=text;parent.append(node);return node;
+}
+function beep(){
+  if(!el('sound').checked || !audio) return;
+  const tone=audio.createOscillator(), gain=audio.createGain();tone.frequency.value=660;
+  gain.gain.value=.12;tone.connect(gain);gain.connect(audio.destination);tone.start();tone.stop(audio.currentTime+.25);
+}
+function card(d){
+  const a=document.createElement('article'), f=d.forecast, c=d.thresholds;
+  const warn=d.warnings.length || ['stale','clock_error','ph_quality'].includes(d.state);
+  if(warn) a.className='warn';
+  add(a,'strong',d.device_id+' · '+(states[d.state] || d.state));
+  if(f) add(a,'p','Thời điểm dự báo: '+new Date(f.target_utc).toLocaleString('vi-VN'));
+  const table=add(a,'table',''), header=table.insertRow();
+  for(const text of ['Thông số','Hiện tại','Sau 30 phút','Khoảng / mốc']) add(header,'th',text);
+  for(const [field,label,current,unit,digits] of specs){
+    const row=table.insertRow(), ch=d.channels?.[field];
+    const format=x=>Number.isFinite(x)?x.toFixed(digits)+unit:'—';
+    let forecast=format(f?.[field]);
+    if(!Number.isFinite(f?.[field]) && ch){
+      forecast=states[ch.state] || 'Chưa có';
+      if(ch.state==='history') forecast+=' ('+ch.minutes+'/15 phút)';
+    }
+    const bounds=field==='tds_ppm'?(c.tds_high==null?'—':'≤ '+c.tds_high+' ppm (tham khảo)'):
+      field==='ph'?(c.ph_low==null?'—':c.ph_low+'–'+c.ph_high):
+      (c.temp_low==null?'—':c.temp_low+'–'+c.temp_high+' °C');
+    for(const value of [label,format(d[current]),forecast,bounds]) add(row,'td',value);
+  }
+  for(const warning of d.warnings) add(a,'p',names[warning] || warning);
+  return a;
+}
+async function refresh(run){
+  try{
+    const [read,f]=await Promise.all(['/api/latest','/api/forecast'].map(async url=>(await get(url)).json()));
+    if(run!==generation) return;
+    el('cards').replaceChildren(...f.devices.map(card));
+    el('data').textContent=JSON.stringify(read,null,2);el('events').textContent=JSON.stringify(f.recent_events,null,2);
+    el('status').textContent=f.devices.length?'Đã kết nối máy chủ':'Đang chờ ESP32';
+    el('evaluation').textContent=specs.map(([field,label,,unit,digits])=>{
+      const e=f.evaluation.channels[field];return label+': '+e.matched_count+
+        ' dự báo đã đối chiếu'+(e.mae==null?'':' · MAE '+e.mae.toFixed(digits)+unit);
+    }).join(' | ');
+    const alarms=f.devices.filter(d=>d.warnings.length || ['stale','clock_error','ph_quality'].includes(d.state))
+      .map(d=>[d.device_id,d.state,d.warnings]);
+    const sig=JSON.stringify(alarms);if(alarms.length && sig!==lastSignature) beep();lastSignature=sig;
+  } catch(e){
+    if(run!==generation) return;
+    el('status').textContent='Không nhận được dữ liệu: '+e.message;el('cards').replaceChildren();
+  } finally {
+    if(run===generation) timer=setTimeout(()=>refresh(run),3000);
+  }
+}
+el('connect').onclick=()=>{
+  key=el('key').value.trim();clearTimeout(timer);generation++;
+  if(!/^[\x21-\x7e]+$/.test(key)){el('status').textContent='Kiểm tra API key';return;}
+  refresh(generation);
+};
+el('sound').onchange=()=>{if(el('sound').checked){audio=audio || new AudioContext();audio.resume();}};
+async function download(path,name){
+  try{const blob=await (await get(path)).blob(),url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){el('status').textContent=e.message;}
+}
+el('csv').onclick=()=>download('/export.csv','water_readings.csv');
+el('forecasts').onclick=()=>download('/forecasts.csv','water_forecasts.csv');
+</script></html>

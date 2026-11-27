@@ -76,7 +76,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200,(ROOT/'monitor.html').read_bytes(),'text/html; charset=utf-8');return
         if self.path=='/health': self.send(200,{'status':'ok'});return
         if self.path not in ('/api/latest','/export.csv','/api/forecast','/forecasts.csv'): self.send(404,{'error':'Not found'});return
-        if not self.authorized(): return
         if self.path=='/api/forecast':
             with self.server.forecast_lock: result=self.server.engine.tick()
             self.send(200,result);return
@@ -113,7 +112,8 @@ def main():
     key=json.loads(config.read_text())['api_key']
     s=make_server(a.host,a.port,key,ROOT/'data/readings.sqlite3')
     print('Monitor: http://127.0.0.1:'+str(a.port),flush=True)
-    print('API_KEY (copy into config.h and monitor): '+key,flush=True)
+    print('Monitor connects automatically; no API key required in the browser.',flush=True)
+    print('API_KEY (ESP32 config.h only): '+key,flush=True)
     print('Use the PC LAN IPv4 address for SERVER_URL. Ctrl+C to stop.',flush=True)
     stop=threading.Event()
     def background():

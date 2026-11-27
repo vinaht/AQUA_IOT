@@ -8,7 +8,9 @@ class Tests(unittest.TestCase):
  def tearDown(self):
   self.s.shutdown();self.s.server_close();self.t.join();self.tmp.cleanup()
  def request(self,path,body=None,key='testkey'):
-  q=urllib.request.Request(self.url+path,data=json.dumps(body).encode() if body is not None else None,headers={'X-API-Key':key,'Content-Type':'application/json'})
+  headers={'Content-Type':'application/json'}
+  if key is not None: headers['X-API-Key']=key
+  q=urllib.request.Request(self.url+path,data=json.dumps(body).encode() if body is not None else None,headers=headers)
   try:
    with urllib.request.urlopen(q,timeout=3) as r:return r.status,r.read()
   except urllib.error.HTTPError as e:return e.code,e.read()
@@ -24,7 +26,25 @@ class Tests(unittest.TestCase):
   self.assertEqual(json.loads(self.request('/api/latest')[1])['count'],2)
  def test_bad_auth(self):
   self.assertEqual(self.request('/api/readings',BASE,key='wrong')[0],401)
+  self.assertEqual(self.request('/api/readings',BASE,key=None)[0],401)
   self.assertEqual(json.loads(self.request('/api/latest')[1])['count'],0)
+ def test_browser_reads_without_key(self):
+  self.assertEqual(self.request('/api/readings',BASE)[0],201)
+  for path in ('/','/api/latest','/api/forecast','/export.csv','/forecasts.csv'):
+   with self.subTest(path=path):
+    self.assertEqual(self.request(path,key=None)[0],200)
+  self.assertEqual(json.loads(self.request('/api/latest',key=None)[1])['latest']['ph'],BASE['ph'])
+ def test_outside_thresholds_are_stored_and_shown(self):
+  reading=dict(BASE, context='water', ph=9.5, temperature_c=40,
+               temperature_status='ok', tds_ppm=800, tds_status='ok')
+  self.assertEqual(self.request('/api/readings',reading)[0],201)
+  latest=json.loads(self.request('/api/latest',key=None)[1])['latest']
+  out=json.loads(self.request('/api/forecast',key=None)[1])['devices'][0]
+  for field,current,value in [('ph','current_ph',9.5),('temperature_c','current_temperature_c',40),('tds_ppm','tds_ppm',800)]:
+   self.assertEqual(latest[field],value)
+   self.assertEqual(out[current],value)
+  for warning in ('current_outside','temp_current_outside','tds_current_above'):
+   self.assertIn(warning,out['warnings'])
  def test_invalid_numbers_and_status(self):
   for changes in [{'ph':float('nan')},{'ph':15},{'temperature_c':0},{'seq':True},{'context':'unknown'},{'ph':None}]:
    self.assertEqual(self.request('/api/readings',{**BASE,**changes})[0],400)
@@ -52,6 +72,11 @@ class ThreeChannelTests(unittest.TestCase):
         self.assertAlmostEqual(out["forecast"]["tds_ppm"], 520)
         self.assertEqual(out["warnings"], ["tds_current_above", "tds_forecast_above"])
         self.assertIsNotNone(out["forecast"]["temperature_c"])
+        outside = [dict(r, ph=9.5, ph_status="outside_calibration", temperature_c=40, tds_ppm=800) for r in first]
+        outside_result = analyze(outside, at, cfg)
+        for name in ("ph", "temperature_c", "tds_ppm"):
+            self.assertIsNotNone(outside_result["forecast"][name])
+            self.assertEqual(outside_result["channels"][name]["state"], "ready")
         forecast_only = first[:-1] + [dict(first[-1], tds_ppm=480)]
         self.assertEqual(analyze(forecast_only, at, cfg)["warnings"], ["tds_forecast_above"])
         exact = [dict(r, tds_ppm=500) for r in first]
